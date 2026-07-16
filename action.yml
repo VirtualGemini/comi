@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: MIT
+name: "comi"
+description: "A pixel cat living in your GitHub profile README, fed by your GitHub activity."
+author: "VirtualGemini"
+
+branding:
+  icon: "github"
+  color: "orange"
+
+inputs:
+  cat_name:
+    description: "Display name of the cat on the card."
+    required: false
+    default: "comi"
+  lang:
+    description: "Card language: en, zh-CN, zh-TW, or ja."
+    required: false
+    default: "en"
+  branch:
+    description: "Branch that stores the cat state and the card SVG."
+    required: false
+    default: "pet"
+  timezone:
+    description: "IANA timezone used for the daily intake cutoff."
+    required: false
+    default: "UTC"
+
+runs:
+  using: "node24"
+  main: "dist/index.js"
