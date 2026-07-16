@@ -1,13 +1,20 @@
-# comi
+<h1 align="center">comi</h1>
 
-一只住在 GitHub profile README 里的像素猫:你的 commit、PR、issue、merge 喂养它,由 GitHub Actions 驱动——无服务器、完全免费、数据全在你自己的仓库里。
+<div align="center">English | <a href="./README.zh-CN.md">简体中文</a></div>
 
-A pixel cat living in your GitHub profile README, fed by your GitHub activity. Serverless, free, powered by GitHub Actions.
+<br />
 
-## 文档
+<div align="center">
 
-- 产品规格(PRD):[`.scratch/comi-mvp/spec.md`](.scratch/comi-mvp/spec.md)
-- 术语表:[`CONTEXT.md`](CONTEXT.md)
-- 架构决策:[`docs/adr/`](docs/adr/)
-- 开发指南:[`docs/development.md`](docs/development.md)
-- 参与贡献:[`CONTRIBUTING.md`](CONTRIBUTING.md)
+[![license](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE) [![github stars](https://img.shields.io/github/stars/VirtualGemini/comi)](https://github.com/VirtualGemini/comi/stargazers) [![github forks](https://img.shields.io/github/forks/VirtualGemini/comi)](https://github.com/VirtualGemini/comi/network/members)
+
+</div>
+
+<p align="center">A pixel cat living in your GitHub profile README</p>
+<p align="center">
+Feed it with your commits, PRs, issues and merges — please don't ignore it, or it may get very sad……</p>
+
+## Documentation
+
+- Development guide: [`docs/development.md`](docs/development.md)
+- Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md)

@@ -25,6 +25,7 @@ dist/              ncc 打包产物,随源码提交,CI 以 check-dist 防漂移
 ## 3. 语言
 
 - 代码标识符、注释、commit message、`action.yml` 描述:英文。
+- README:英文为主文件(`README.md`),简体中文版为 `README.zh-CN.md`,两者头部互链切换。
 - 工程文档、PRD、ADR、`CONTEXT.md`:中文。
 - 卡片文案:`src/locales/` 四语言资源文件(en / zh-CN / zh-TW / ja),键集合各语言保持一致。
 
