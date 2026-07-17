@@ -8,6 +8,10 @@ branding:
   color: "orange"
 
 inputs:
+  github_token:
+    description: "Token used to read and commit the cat state on the state branch."
+    required: false
+    default: ${{ github.token }}
   cat_name:
     description: "Display name of the cat on the card."
     required: false

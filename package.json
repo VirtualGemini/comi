@@ -18,7 +18,8 @@
     "lint": "biome lint ."
   },
   "dependencies": {
-    "@actions/core": "1.11.1"
+    "@actions/core": "1.11.1",
+    "@actions/github": "9.1.1"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

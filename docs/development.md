@@ -15,7 +15,9 @@
 ## 2. 项目结构
 
 ```text
-src/main.ts        Action 入口(当前为脚手架桩)
+src/main.ts        Action 入口(组装真实依赖并启动一次运行)
+src/config.ts      inputs 解析,未配置时落 PRD §7 默认值
+src/run.ts         单次运行编排:读取/初始化状态 → 渲染卡片 → 提交回状态分支
 tests/             vitest 单元测试
 dist/              ncc 打包产物,随源码提交,CI 以 check-dist 防漂移
 ```
