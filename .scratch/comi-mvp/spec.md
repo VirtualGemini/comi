@@ -101,6 +101,7 @@ workflow 权限:`contents: write`,GITHUB_TOKEN 默认能力即可,无需任何�
 | `lang` | en | 卡片语言:en / zh-CN / zh-TW / ja |
 | `branch` | pet | 状态与卡片所在分支 |
 | `timezone` | UTC | 每日封顶的日切时区 |
+| `github_token` | `${{ github.token }}` | 读写状态分支的凭据 |
 | 轮询间隔 | 每小时 | 用户直接改自己 workflow 的 cron |
 
 ## 8. 路线图(v1.x,按优先级排序)
