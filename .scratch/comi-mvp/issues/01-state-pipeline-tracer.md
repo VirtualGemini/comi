@@ -4,11 +4,15 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] 首次运行:状态分支不存在时创建,生成符合 PRD §6 schema v1 的 state.json(新猫默认值:mood 60、level 1、total_feeding 0、daily_intake 当日归零)
-- [ ] 再次运行:读取已有状态,`updated_at` 推进并产生一次提交
-- [ ] 占位卡片 SVG 与 state.json 同步写入,显示 cat_name 与 Lv 数值
-- [ ] `cat_name`、`branch` inputs 生效,未配置时用 PRD §7 默认值
-- [ ] 状态读写与分支提交逻辑有单元测试,git/网络经接口注入假实现(docs/development.md §5)
-- [ ] 用户在测试 profile 仓库 workflow_dispatch 实测:README 出现占位卡片(此条由用户验证)
+- [x] 首次运行:状态分支不存在时创建,生成符合 PRD §6 schema v1 的 state.json(新猫默认值:mood 60、level 1、total_feeding 0、daily_intake 当日归零)
+- [x] 再次运行:读取已有状态,`updated_at` 推进并产生一次提交
+- [x] 占位卡片 SVG 与 state.json 同步写入,显示 cat_name 与 Lv 数值
+- [x] `cat_name`、`branch` inputs 生效,未配置时用 PRD §7 默认值
+- [x] 状态读写与分支提交逻辑有单元测试,git/网络经接口注入假实现(docs/development.md §5)
+- [x] 用户在测试 profile 仓库 workflow_dispatch 实测:README 出现占位卡片(此条由用户验证)
+
+## Comments
+
+- 2026-07-18:实现落在 `feat/01-state-pipeline-tracer`(`6f9930d` 实现 + `9da28ab` ADR 0004)。五个约定测试缝共 29 例单测全绿。用户在 VirtualGemini/VirtualGemini 实测通过:README 出现占位卡片,二次触发在 `pet` 分支产生新提交(保活)。提交方式经 REST Git Data API,见 docs/adr/0004。
