@@ -16,6 +16,8 @@ export interface CatState {
   total_feeding: number;
   level: number;
   last_event_id: string | null;
+  /** ETag of the last Events API response, for conditional polling (ADR 0001). */
+  events_etag: string | null;
   daily_intake: DailyIntake;
   updated_at: string;
 }
@@ -41,6 +43,7 @@ export function newCatState(catName: string, now: Date): CatState {
     total_feeding: 0,
     level: NEW_CAT_LEVEL,
     last_event_id: null,
+    events_etag: null,
     daily_intake: { date: toUtcDate(now), kibble: 0, snack: 0, feast: 0 },
     updated_at: toIsoUtcSeconds(now),
   };
@@ -76,6 +79,8 @@ export function parseState(document: string): CatState {
     total_feeding: requireNumber(parsed.total_feeding, "total_feeding"),
     level: requireNumber(parsed.level, "level"),
     last_event_id: requireStringOrNull(parsed.last_event_id, "last_event_id"),
+    // Absent in documents written before the collector existed; treat as never polled.
+    events_etag: requireStringOrNull(parsed.events_etag ?? null, "events_etag"),
     daily_intake: {
       date: requireString(intake.date, "daily_intake.date"),
       kibble: requireNumber(intake.kibble, "daily_intake.kibble"),
