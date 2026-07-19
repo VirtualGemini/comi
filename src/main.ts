@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import * as core from "@actions/core";
 import { context, getOctokit } from "@actions/github";
+import { OctokitEventsClient } from "./collect/octokit-events-client";
 import { resolveConfig } from "./config";
 import { runComi } from "./run";
 import { GitHubStateStore } from "./state/github-store";
@@ -15,9 +16,11 @@ async function main(): Promise<void> {
     timezone: core.getInput("timezone"),
   });
   const { owner, repo } = context.repo;
-  const git = new OctokitGitDataClient(getOctokit(token), owner, repo);
+  const octokit = getOctokit(token);
+  const git = new OctokitGitDataClient(octokit, owner, repo);
   const store = new GitHubStateStore(git, config.branch);
-  await runComi(config, { store, now: () => new Date(), info: core.info });
+  const events = new OctokitEventsClient(octokit, owner);
+  await runComi(config, { store, events, owner, now: () => new Date(), info: core.info });
 }
 
 main().catch((error: unknown) => {

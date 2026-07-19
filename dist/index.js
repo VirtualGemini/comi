@@ -61105,6 +61105,94 @@ function getOctokit(token, options, ...additionalPlugins) {
     return new GitHubWithPlugins(getOctokitOptions(token, options));
 }
 //# sourceMappingURL=github.js.map
+;// CONCATENATED MODULE: ./src/collect/events-client.ts
+// SPDX-License-Identifier: MIT
+/** Page size for the events feed; 3 pages cover the API's ~300-event window (PRD §6). */
+const PER_PAGE = 100;
+
+;// CONCATENATED MODULE: ./src/collect/octokit-events-client.ts
+
+/**
+ * Production adapter mapping the EventsClient port onto
+ * `GET /users/{username}/events` (ADR 0001): one REST call per page, a 304
+ * translated to not_modified, and payload fields extracted defensively —
+ * the published schema types the payload loosely. Domain decisions stay in
+ * the collector; this layer is verified live via workflow_dispatch.
+ */
+class OctokitEventsClient {
+    octokit;
+    username;
+    constructor(octokit, username) {
+        this.octokit = octokit;
+        this.username = username;
+    }
+    async listEventsPage(page, etag) {
+        try {
+            const response = await this.octokit.request("GET /users/{username}/events", {
+                username: this.username,
+                per_page: PER_PAGE,
+                page,
+                headers: etag === null ? {} : { "if-none-match": etag },
+            });
+            return {
+                status: "ok",
+                events: response.data.map((event) => toOwnerEvent(event)),
+                etag: response.headers.etag ?? null,
+            };
+        }
+        catch (error) {
+            if (isNotModified(error)) {
+                return { status: "not_modified" };
+            }
+            throw error;
+        }
+    }
+}
+function toOwnerEvent(raw) {
+    return {
+        id: raw.id,
+        type: raw.type ?? "",
+        actor: { login: raw.actor.login },
+        repo: { name: raw.repo.name },
+        payload: toEventPayload(raw.payload),
+    };
+}
+function toEventPayload(raw) {
+    if (!isRecord(raw)) {
+        return {};
+    }
+    const payload = {};
+    if (typeof raw.action === "string") {
+        payload.action = raw.action;
+    }
+    if (typeof raw.distinct_size === "number") {
+        payload.distinct_size = raw.distinct_size;
+    }
+    const pullRequest = raw.pull_request;
+    if (isRecord(pullRequest)) {
+        payload.pull_request = {
+            merged: pullRequest.merged === true,
+            merged_by: toMergedBy(pullRequest.merged_by),
+        };
+    }
+    return payload;
+}
+function toMergedBy(raw) {
+    if (isRecord(raw) && typeof raw.login === "string") {
+        return { login: raw.login };
+    }
+    return null;
+}
+function isRecord(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isNotModified(error) {
+    return (typeof error === "object" &&
+        error !== null &&
+        "status" in error &&
+        error.status === 304);
+}
+
 ;// CONCATENATED MODULE: ./src/config.ts
 // SPDX-License-Identifier: MIT
 const config_DEFAULTS = {
@@ -61124,6 +61212,136 @@ function resolveConfig(raw) {
 function valueOrDefault(value, fallback) {
     const trimmed = value?.trim() ?? "";
     return trimmed === "" ? fallback : trimmed;
+}
+
+;// CONCATENATED MODULE: ./src/collect/guards.ts
+/** GitHub logins and repository names compare case-insensitively. */
+function sameGitHubName(a, b) {
+    return a.toLowerCase() === b.toLowerCase();
+}
+/**
+ * Guard rules (PRD §3.3): only events the owner performed feed the cat,
+ * the profile repository's own events do not count, and bot identities do
+ * not count.
+ */
+function passesGuards(event, owner) {
+    const actor = event.actor.login;
+    if (!sameGitHubName(actor, owner)) {
+        return false;
+    }
+    if (actor.toLowerCase().endsWith("[bot]")) {
+        return false;
+    }
+    return !sameGitHubName(event.repo.name, `${owner}/${owner}`);
+}
+
+;// CONCATENATED MODULE: ./src/collect/diet.ts
+
+/**
+ * Maps one guarded event onto the diet table (PRD §3.3), or null when the
+ * event does not feed the cat. A PushEvent yields one kibble serving per
+ * distinct commit; snack events yield one serving each; a merge the owner
+ * performed and a published release yield one feast serving each.
+ */
+function feedingFor(event, owner) {
+    switch (event.type) {
+        case "PushEvent": {
+            const distinct = event.payload.distinct_size ?? 0;
+            return distinct > 0 ? { tier: "kibble", servings: distinct } : null;
+        }
+        case "IssuesEvent":
+            return event.payload.action === "opened" ? oneServing("snack") : null;
+        case "PullRequestEvent":
+            if (event.payload.action === "opened") {
+                return oneServing("snack");
+            }
+            if (event.payload.action === "closed" && isMergedByOwner(event, owner)) {
+                return oneServing("feast");
+            }
+            return null;
+        // The PRD lists reviews with no action qualifier, so every one counts.
+        case "PullRequestReviewEvent":
+            return oneServing("snack");
+        case "IssueCommentEvent":
+            return event.payload.action === "created" ? oneServing("snack") : null;
+        case "ReleaseEvent":
+            return event.payload.action === "published" ? oneServing("feast") : null;
+        default:
+            return null;
+    }
+}
+function oneServing(tier) {
+    return { tier, servings: 1 };
+}
+function isMergedByOwner(event, owner) {
+    const pullRequest = event.payload.pull_request;
+    if (pullRequest?.merged !== true) {
+        return false;
+    }
+    const mergedBy = pullRequest.merged_by?.login;
+    return mergedBy !== undefined && sameGitHubName(mergedBy, owner);
+}
+
+;// CONCATENATED MODULE: ./src/collect/collector.ts
+// SPDX-License-Identifier: MIT
+
+
+
+/** The events feed keeps ~300 events (PRD §6 platform constraint), three full pages. */
+const MAX_PAGES = 3;
+/**
+ * Polls the owner's event stream through the injected client (ADR 0001):
+ * page one rides the stored ETag, pages follow until the stream ends, the
+ * known last_event_id appears, or the API window is exhausted. New events
+ * pass the guard rules and the diet table; feedings come back oldest-first.
+ * Every seen event advances last_event_id, so a bot's or the profile
+ * repository's own activity is never re-examined on later runs.
+ */
+async function collectFeedings(client, input) {
+    const first = await client.listEventsPage(1, input.etag);
+    if (first.status === "not_modified") {
+        return { feedings: [], lastEventId: input.lastEventId, etag: input.etag };
+    }
+    const newEvents = [];
+    const seen = new Set();
+    let page = first;
+    let pageNumber = 1;
+    let reachedKnown = false;
+    for (;;) {
+        for (const event of page.events) {
+            if (!isNewer(event.id, input.lastEventId)) {
+                reachedKnown = true;
+                break;
+            }
+            if (seen.has(event.id)) {
+                continue;
+            }
+            seen.add(event.id);
+            newEvents.push(event);
+        }
+        if (reachedKnown || page.events.length < PER_PAGE || pageNumber >= MAX_PAGES) {
+            break;
+        }
+        pageNumber += 1;
+        const next = await client.listEventsPage(pageNumber, null);
+        if (next.status === "not_modified") {
+            break;
+        }
+        page = next;
+    }
+    const feedings = newEvents
+        .filter((event) => passesGuards(event, input.owner))
+        .map((event) => feedingFor(event, input.owner))
+        .filter((feeding) => feeding !== null)
+        .reverse();
+    return {
+        feedings,
+        lastEventId: newEvents[0]?.id ?? input.lastEventId,
+        etag: first.etag,
+    };
+}
+function isNewer(id, lastEventId) {
+    return lastEventId === null || BigInt(id) > BigInt(lastEventId);
 }
 
 ;// CONCATENATED MODULE: ./src/render/placeholder-card.ts
@@ -61175,6 +61393,7 @@ function newCatState(catName, now) {
         total_feeding: 0,
         level: NEW_CAT_LEVEL,
         last_event_id: null,
+        events_etag: null,
         daily_intake: { date: toUtcDate(now), kibble: 0, snack: 0, feast: 0 },
         updated_at: toIsoUtcSeconds(now),
     };
@@ -61190,14 +61409,14 @@ function parseState(document) {
     catch (error) {
         throw new Error(`state.json is not valid JSON: ${error.message}`);
     }
-    if (!isRecord(parsed)) {
+    if (!state_isRecord(parsed)) {
         throw new Error("state.json must be a JSON object");
     }
     if (parsed.schema_version !== SCHEMA_VERSION) {
         throw new Error(`state.json has unsupported schema_version ${JSON.stringify(parsed.schema_version)}`);
     }
     const intake = parsed.daily_intake;
-    if (!isRecord(intake)) {
+    if (!state_isRecord(intake)) {
         throw new Error("state.json field daily_intake must be an object");
     }
     return {
@@ -61207,6 +61426,8 @@ function parseState(document) {
         total_feeding: requireNumber(parsed.total_feeding, "total_feeding"),
         level: requireNumber(parsed.level, "level"),
         last_event_id: requireStringOrNull(parsed.last_event_id, "last_event_id"),
+        // Absent in documents written before the collector existed; treat as never polled.
+        events_etag: requireStringOrNull(parsed.events_etag ?? null, "events_etag"),
         daily_intake: {
             date: requireString(intake.date, "daily_intake.date"),
             kibble: requireNumber(intake.kibble, "daily_intake.kibble"),
@@ -61216,7 +61437,7 @@ function parseState(document) {
         updated_at: requireString(parsed.updated_at, "updated_at"),
     };
 }
-function isRecord(value) {
+function state_isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function requireString(value, name) {
@@ -61239,26 +61460,52 @@ function requireStringOrNull(value, name) {
 }
 
 ;// CONCATENATED MODULE: ./src/run.ts
+// SPDX-License-Identifier: MIT
+
 
 
 const COMMIT_MESSAGE = "comi: update cat state";
 /**
- * One scheduled run: load or initialize the cat, advance updated_at, redraw
- * the card, and commit both files back. Saving unconditionally keeps the
+ * One scheduled run: load or initialize the cat, poll the owner's activity
+ * into feedings and log the intake list, advance the event cursor, redraw
+ * the card, and commit everything back. Saving unconditionally keeps the
  * scheduled workflow alive (PRD §6).
  */
 async function runComi(config, deps) {
     const existing = await deps.store.load();
     const now = deps.now();
-    const state = existing === null
+    const base = existing === null
         ? newCatState(config.catName, now)
         : { ...existing, cat_name: config.catName, updated_at: toIsoUtcSeconds(now) };
     if (existing === null) {
         deps.info(`comi: adopting a new cat named ${config.catName}`);
     }
+    const collection = await collectFeedings(deps.events, {
+        owner: deps.owner,
+        lastEventId: base.last_event_id,
+        etag: base.events_etag,
+    });
+    logIntake(collection, deps.info);
+    const state = {
+        ...base,
+        last_event_id: collection.lastEventId,
+        events_etag: collection.etag,
+    };
     const card = renderPlaceholderCard(state);
     await deps.store.save({ state, card }, COMMIT_MESSAGE);
     deps.info(`comi: ${state.cat_name} saved (Lv.${state.level}, mood ${state.mood})`);
+}
+/** Lists what was booked this run, one servings count per diet tier. */
+function logIntake(collection, info) {
+    if (collection.feedings.length === 0) {
+        info("comi: no new feedings this run");
+        return;
+    }
+    const totals = { kibble: 0, snack: 0, feast: 0 };
+    for (const feeding of collection.feedings) {
+        totals[feeding.tier] += feeding.servings;
+    }
+    info(`comi: intake this run: kibble x${totals.kibble}, snack x${totals.snack}, feast x${totals.feast}`);
 }
 
 ;// CONCATENATED MODULE: ./src/state/store.ts
@@ -61433,6 +61680,7 @@ function isNotFound(error) {
 
 
 
+
 async function main() {
     const token = core.getInput("github_token", { required: true });
     const config = resolveConfig({
@@ -61442,9 +61690,11 @@ async function main() {
         timezone: core.getInput("timezone"),
     });
     const { owner, repo } = github_context.repo;
-    const git = new OctokitGitDataClient(getOctokit(token), owner, repo);
+    const octokit = getOctokit(token);
+    const git = new OctokitGitDataClient(octokit, owner, repo);
     const store = new GitHubStateStore(git, config.branch);
-    await runComi(config, { store, now: () => new Date(), info: core.info });
+    const events = new OctokitEventsClient(octokit, owner);
+    await runComi(config, { store, events, owner, now: () => new Date(), info: core.info });
 }
 main().catch((error) => {
     core.setFailed(error instanceof Error ? error.message : String(error));

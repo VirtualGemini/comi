@@ -13,6 +13,7 @@ describe("newCatState", () => {
       total_feeding: 0,
       level: 1,
       last_event_id: null,
+      events_etag: null,
       daily_intake: { date: "2026-07-17", kibble: 0, snack: 0, feast: 0 },
       updated_at: "2026-07-17T08:30:15Z",
     });
@@ -33,6 +34,7 @@ describe("serializeState", () => {
   "total_feeding": 0,
   "level": 1,
   "last_event_id": null,
+  "events_etag": null,
   "daily_intake": {
     "date": "2026-07-17",
     "kibble": 0,
@@ -64,9 +66,15 @@ describe("parseState", () => {
       total_feeding: 1180,
       level: 5,
       last_event_id: "34567890123",
+      events_etag: null,
       daily_intake: { date: "2026-07-16", kibble: 9, snack: 8, feast: 0 },
       updated_at: "2026-07-16T09:23:11Z",
     });
+  });
+
+  test("round-trips a state carrying an events etag", () => {
+    const state = { ...newCatState("comi", NOW), events_etag: 'W/"snapshot"' };
+    expect(parseState(serializeState(state))).toEqual(state);
   });
 
   test("round-trips a serialized state", () => {
